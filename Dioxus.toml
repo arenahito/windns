@@ -1,0 +1,9 @@
+[application]
+name = "windns"
+default_platform = "desktop"
+
+[desktop]
+title = "Windows DNS Switcher"
+width = 600
+height = 700
+resizable = true
