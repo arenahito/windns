@@ -63,7 +63,6 @@ pub fn App() -> Element {
     rsx! {
         style { {include_str!("../assets/main.css")} }
         div { class: "app-container",
-            Header {}
             div { class: "content",
                 NetworkSelector {
                     state: state,
