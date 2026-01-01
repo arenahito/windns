@@ -17,8 +17,8 @@ const AF_INET6: u16 = 23;
 #[cfg(target_os = "windows")]
 pub fn get_network_interfaces() -> Result<Vec<NetworkInterface>> {
     use windows::Win32::NetworkManagement::IpHelper::{
-        GetAdaptersAddresses, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER,
-        GAA_FLAG_SKIP_MULTICAST, IP_ADAPTER_ADDRESSES_LH,
+        GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
+        GetAdaptersAddresses, IP_ADAPTER_ADDRESSES_LH,
     };
     use windows::Win32::Networking::WinSock::{AF_UNSPEC, SOCKADDR_IN, SOCKADDR_IN6};
 

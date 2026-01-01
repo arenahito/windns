@@ -17,6 +17,9 @@ pub type Result<T> = std::result::Result<T, DnsCommandError>;
 const AF_INET: u64 = 2;
 const AF_INET6: u64 = 23;
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 fn escape_powershell_string(s: &str) -> String {
     s.replace('`', "``")
         .replace("'", "''")
@@ -24,10 +27,13 @@ fn escape_powershell_string(s: &str) -> String {
 }
 
 async fn run_powershell(script: &str) -> Result<String> {
-    let output = Command::new("powershell.exe")
-        .args(["-NoProfile", "-NonInteractive", "-Command", script])
-        .output()
-        .await?;
+    let mut command = Command::new("powershell.exe");
+    command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW);
+
+    let output = command.output().await?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -61,18 +67,18 @@ pub async fn get_current_dns(interface_index: u32) -> Result<CurrentDnsState> {
     };
 
     for entry in entries {
-        if let Some(family) = entry.get("AddressFamily").and_then(|v| v.as_u64()) {
-            if let Some(addresses) = entry.get("ServerAddresses").and_then(|v| v.as_array()) {
-                let addr_list: Vec<String> = addresses
-                    .iter()
-                    .filter_map(|a| a.as_str().map(|s| s.to_string()))
-                    .collect();
+        if let Some(family) = entry.get("AddressFamily").and_then(|v| v.as_u64())
+            && let Some(addresses) = entry.get("ServerAddresses").and_then(|v| v.as_array())
+        {
+            let addr_list: Vec<String> = addresses
+                .iter()
+                .filter_map(|a| a.as_str().map(|s| s.to_string()))
+                .collect();
 
-                match family {
-                    AF_INET => state.ipv4 = addr_list,
-                    AF_INET6 => state.ipv6 = addr_list,
-                    _ => {}
-                }
+            match family {
+                AF_INET => state.ipv4 = addr_list,
+                AF_INET6 => state.ipv6 = addr_list,
+                _ => {}
             }
         }
     }
@@ -189,10 +195,8 @@ pub async fn set_dns_with_doh(
     let has_doh = entry.primary.doh_mode == crate::dns::DohMode::On
         || entry.secondary.doh_mode == crate::dns::DohMode::On;
 
-    if has_doh {
-        if let Err(e) = enable_doh_registry(interface_guid).await {
-            doh_errors.push(format!("Registry: {}", e));
-        }
+    if has_doh && let Err(e) = enable_doh_registry(interface_guid).await {
+        doh_errors.push(format!("Registry: {}", e));
     }
 
     if !doh_errors.is_empty() {

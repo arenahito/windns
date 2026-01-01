@@ -1,7 +1,7 @@
 use crate::components::*;
 use crate::dns::{
-    get_current_dns, get_network_interfaces, load_config, save_config, set_dns_automatic,
-    set_dns_with_doh, AddressFamily, DnsMode, DnsSettings,
+    AddressFamily, DnsMode, DnsSettings, get_current_dns, get_network_interfaces, load_config,
+    save_config, set_dns_automatic, set_dns_with_doh,
 };
 use crate::state::{AppState, Message};
 use dioxus::prelude::*;
@@ -170,12 +170,13 @@ fn change_dns_mode(mut state: Signal<AppState>, mode: DnsMode) {
 
     if mode == DnsMode::Manual && write_state.config.profiles.is_empty() {
         write_state.create_new_profile();
-    } else if mode == DnsMode::Manual && write_state.selected_profile_id.is_none() {
-        if let Some(first) = write_state.config.sorted_profiles().first() {
-            let first_id = first.id.clone();
-            drop(write_state);
-            state.write().select_profile(&first_id);
-        }
+    } else if mode == DnsMode::Manual
+        && write_state.selected_profile_id.is_none()
+        && let Some(first) = write_state.config.sorted_profiles().first()
+    {
+        let first_id = first.id.clone();
+        drop(write_state);
+        state.write().select_profile(&first_id);
     }
 }
 

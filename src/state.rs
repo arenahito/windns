@@ -145,10 +145,10 @@ impl AppState {
                 return Err("Profile name cannot be empty".to_string());
             }
 
-            if let Some(ref id) = self.selected_profile_id {
-                if self.is_profile_name_duplicate(&self.current_profile_name, Some(id)) {
-                    return Err("A profile with this name already exists".to_string());
-                }
+            if let Some(ref id) = self.selected_profile_id
+                && self.is_profile_name_duplicate(&self.current_profile_name, Some(id))
+            {
+                return Err("A profile with this name already exists".to_string());
             }
         }
 
