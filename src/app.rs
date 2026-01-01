@@ -1,7 +1,7 @@
 use crate::components::*;
 use crate::dns::{
-    AddressFamily, DnsMode, DnsSettings, get_current_dns, get_network_interfaces, load_config,
-    save_config, set_dns_automatic, set_dns_with_doh,
+    get_current_dns, get_network_interfaces, load_config, save_config, set_dns_automatic,
+    set_dns_with_doh, AddressFamily, DnsMode, DnsSettings,
 };
 use crate::state::{AppState, Message};
 use dioxus::prelude::*;
@@ -23,13 +23,43 @@ pub fn App() -> Element {
     };
 
     let on_mode_change = move |mode: DnsMode| {
-        spawn(async move {
-            change_dns_mode(state, mode).await;
-        });
+        change_dns_mode(state, mode);
     };
 
     let on_settings_change = move |settings: DnsSettings| {
         state.write().current_settings = settings;
+    };
+
+    let on_profile_change = move |id: String| {
+        state.write().select_profile(&id);
+    };
+
+    let on_new_profile = move |_| {
+        state.write().create_new_profile();
+    };
+
+    let on_profile_name_change = move |name: String| {
+        state.write().current_profile_name = name;
+    };
+
+    let on_delete_profile = move |_| {
+        state.write().show_delete_confirm = true;
+    };
+
+    let on_confirm_delete = move |_| {
+        let mut write_state = state.write();
+        write_state.delete_current_profile();
+        write_state.show_delete_confirm = false;
+    };
+
+    let on_cancel_delete = move |_| {
+        state.write().show_delete_confirm = false;
+    };
+
+    let on_save = move |_| {
+        spawn(async move {
+            save_settings_only(state).await;
+        });
     };
 
     let on_apply = move |_| {
@@ -38,14 +68,20 @@ pub fn App() -> Element {
         });
     };
 
-    let on_reset = move |_| {
-        spawn(async move {
-            reset_dns_settings(state).await;
-        });
-    };
+    let show_delete_confirm = state.read().show_delete_confirm;
+    let profile_name_for_dialog = state.read().current_profile_name.clone();
 
     rsx! {
         style { {include_str!("../assets/main.css")} }
+
+        if show_delete_confirm {
+            DeleteConfirmDialog {
+                profile_name: profile_name_for_dialog,
+                on_confirm: on_confirm_delete,
+                on_cancel: on_cancel_delete,
+            }
+        }
+
         div { class: "app-container",
             div { class: "content",
                 NetworkSelector {
@@ -55,12 +91,16 @@ pub fn App() -> Element {
                 DnsInput {
                     state: state,
                     on_settings_change: on_settings_change,
-                    on_mode_change: on_mode_change
+                    on_mode_change: on_mode_change,
+                    on_profile_change: on_profile_change,
+                    on_new_profile: on_new_profile,
+                    on_profile_name_change: on_profile_name_change,
+                    on_delete_profile: on_delete_profile,
                 }
                 ActionButtons {
                     state: state,
+                    on_save: on_save,
                     on_apply: on_apply,
-                    on_reset: on_reset
                 }
             }
             StatusBar { state: state }
@@ -90,8 +130,11 @@ async fn initialize_app(mut state: Signal<AppState>) {
                     .set_message(Message::error("No network interfaces found"));
                 return;
             }
-            state.write().interfaces = interfaces;
-            state.write().selected_interface_index = 0;
+            {
+                let mut write_state = state.write();
+                write_state.interfaces = interfaces;
+                write_state.selected_interface_index = 0;
+            }
 
             refresh_current_dns(state).await;
         }
@@ -109,40 +152,30 @@ async fn change_interface(mut state: Signal<AppState>, index: usize) {
         let mut write_state = state.write();
         write_state.selected_interface_index = index;
         write_state.clear_message();
-        write_state.dns_mode = DnsMode::Automatic;
-        write_state.load_settings_for_mode(DnsMode::Automatic);
     }
 
     refresh_current_dns(state).await;
 }
 
-async fn change_dns_mode(mut state: Signal<AppState>, mode: DnsMode) {
+fn change_dns_mode(mut state: Signal<AppState>, mode: DnsMode) {
     let old_mode = state.read().dns_mode;
 
     if old_mode == mode {
         return;
     }
 
-    if old_mode == DnsMode::Manual {
-        let config = {
-            let mut write_state = state.write();
-            write_state.save_settings_for_mode(old_mode);
-            write_state.config.clone()
-        };
+    let mut write_state = state.write();
+    write_state.dns_mode = mode;
+    write_state.clear_message();
 
-        if let Err(e) = save_config(&config) {
-            state
-                .write()
-                .set_message(Message::error(format!("Failed to save config: {}", e)));
-            return;
+    if mode == DnsMode::Manual && write_state.config.profiles.is_empty() {
+        write_state.create_new_profile();
+    } else if mode == DnsMode::Manual && write_state.selected_profile_id.is_none() {
+        if let Some(first) = write_state.config.sorted_profiles().first() {
+            let first_id = first.id.clone();
+            drop(write_state);
+            state.write().select_profile(&first_id);
         }
-    }
-
-    {
-        let mut write_state = state.write();
-        write_state.dns_mode = mode;
-        write_state.load_settings_for_mode(mode);
-        write_state.clear_message();
     }
 }
 
@@ -166,6 +199,38 @@ async fn refresh_current_dns(mut state: Signal<AppState>) {
     }
 }
 
+async fn save_settings_only(mut state: Signal<AppState>) {
+    let validation_result = {
+        let read_state = state.read();
+        if read_state.dns_mode == DnsMode::Manual {
+            read_state.validate_current_settings()
+        } else {
+            Ok(())
+        }
+    };
+
+    if let Err(e) = validation_result {
+        state.write().set_message(Message::error(e));
+        return;
+    }
+
+    if state.read().dns_mode == DnsMode::Manual {
+        state.write().update_current_profile();
+    }
+
+    let config = state.read().config.clone();
+
+    if let Err(e) = save_config(&config) {
+        state
+            .write()
+            .set_message(Message::error(format!("Failed to save config: {}", e)));
+    } else {
+        state
+            .write()
+            .set_message(Message::success("Settings saved"));
+    }
+}
+
 async fn apply_dns_settings(mut state: Signal<AppState>) {
     let validation_result = {
         let mut write_state = state.write();
@@ -186,19 +251,21 @@ async fn apply_dns_settings(mut state: Signal<AppState>) {
 
     match result {
         Ok(()) => {
-            let config = {
-                let mut write_state = state.write();
-                write_state.set_message(Message::success("DNS settings applied successfully"));
-                let dns_mode = write_state.dns_mode;
-                write_state.save_settings_for_mode(dns_mode);
-                write_state.config.clone()
-            };
+            if state.read().dns_mode == DnsMode::Manual {
+                state.write().update_current_profile();
+            }
+
+            let config = state.read().config.clone();
 
             if let Err(e) = save_config(&config) {
                 state.write().set_message(Message::error(format!(
                     "Settings applied but failed to save config: {}",
                     e
                 )));
+            } else {
+                state
+                    .write()
+                    .set_message(Message::success("DNS settings applied successfully"));
             }
 
             refresh_current_dns(state).await;
@@ -271,13 +338,4 @@ async fn apply_dns_settings_impl(state: &Signal<AppState>) -> Result<(), String>
     }
 
     Ok(())
-}
-
-async fn reset_dns_settings(mut state: Signal<AppState>) {
-    let mut write_state = state.write();
-    write_state.clear_message();
-
-    let mode = write_state.dns_mode;
-    write_state.load_settings_for_mode(mode);
-    write_state.set_message(Message::success("Settings reset to saved values"));
 }

@@ -1,4 +1,4 @@
-use crate::components::DnsModeSelector;
+use crate::components::{DnsModeSelector, ProfileSelector};
 use crate::dns::{AddressFamily, DnsMode, DnsSettings, DohMode};
 use crate::state::AppState;
 use dioxus::prelude::*;
@@ -8,6 +8,10 @@ pub fn DnsInput(
     state: Signal<AppState>,
     on_settings_change: EventHandler<DnsSettings>,
     on_mode_change: EventHandler<DnsMode>,
+    on_profile_change: EventHandler<String>,
+    on_new_profile: EventHandler<()>,
+    on_profile_name_change: EventHandler<String>,
+    on_delete_profile: EventHandler<()>,
 ) -> Element {
     let dns_mode = state.read().dns_mode;
     let settings = state.read().current_settings.clone();
@@ -23,6 +27,16 @@ pub fn DnsInput(
         div { class: "section",
             h2 { class: "section-title", "DNS Settings" }
             DnsModeSelector { current_mode: dns_mode, on_change: on_mode_change }
+
+            ProfileSelector {
+                state: state,
+                disabled: is_automatic,
+                on_profile_change: on_profile_change,
+                on_new_profile: on_new_profile,
+                on_name_change: on_profile_name_change,
+                on_delete: on_delete_profile,
+            }
+
             div { class: "dns-settings-grid",
                 if has_ipv4 {
                     DnsFamilyPanel {

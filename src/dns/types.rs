@@ -127,25 +127,26 @@ impl DnsSettings {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
-pub struct InterfaceConfig {
-    pub interface_guid: String,
-    pub interface_name: String,
-    pub manual_settings: DnsSettings,
+pub struct DnsProfile {
+    pub id: String,
+    pub name: String,
+    pub settings: DnsSettings,
 }
 
-impl InterfaceConfig {
-    pub fn new(interface_guid: String, interface_name: String) -> Self {
+impl DnsProfile {
+    pub fn new(name: String) -> Self {
         Self {
-            interface_guid,
-            interface_name,
-            manual_settings: DnsSettings::new(),
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            settings: DnsSettings::new(),
         }
     }
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize, Default, Debug)]
 pub struct AppConfig {
-    pub interfaces: Vec<InterfaceConfig>,
+    #[serde(default)]
+    pub profiles: Vec<DnsProfile>,
 }
 
 impl AppConfig {
@@ -153,29 +154,31 @@ impl AppConfig {
         Self::default()
     }
 
-    pub fn find_interface(&self, guid: &str) -> Option<&InterfaceConfig> {
-        self.interfaces.iter().find(|i| i.interface_guid == guid)
+    pub fn find_profile(&self, id: &str) -> Option<&DnsProfile> {
+        self.profiles.iter().find(|p| p.id == id)
     }
 
-    #[allow(dead_code)]
-    pub fn find_interface_mut(&mut self, guid: &str) -> Option<&mut InterfaceConfig> {
-        self.interfaces
-            .iter_mut()
-            .find(|i| i.interface_guid == guid)
+    pub fn find_profile_mut(&mut self, id: &str) -> Option<&mut DnsProfile> {
+        self.profiles.iter_mut().find(|p| p.id == id)
     }
 
-    pub fn ensure_interface(&mut self, guid: String, name: String) -> &mut InterfaceConfig {
-        if let Some(index) = self
-            .interfaces
-            .iter()
-            .position(|i| i.interface_guid == guid)
-        {
-            &mut self.interfaces[index]
+    pub fn add_profile(&mut self, profile: DnsProfile) {
+        self.profiles.push(profile);
+    }
+
+    pub fn remove_profile(&mut self, id: &str) -> bool {
+        if let Some(pos) = self.profiles.iter().position(|p| p.id == id) {
+            self.profiles.remove(pos);
+            true
         } else {
-            self.interfaces
-                .push(InterfaceConfig::new(guid.clone(), name));
-            self.interfaces.last_mut().expect("just pushed an element")
+            false
         }
+    }
+
+    pub fn sorted_profiles(&self) -> Vec<&DnsProfile> {
+        let mut profiles: Vec<_> = self.profiles.iter().collect();
+        profiles.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        profiles
     }
 }
 
