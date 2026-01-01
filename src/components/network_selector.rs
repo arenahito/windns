@@ -8,9 +8,8 @@ pub fn NetworkSelector(state: Signal<AppState>, on_change: EventHandler<usize>) 
 
     rsx! {
         div { class: "section",
-            div { class: "section-title", "Network Interface" }
+            h2 { class: "section-title", "Network Interface" }
             div { class: "form-group",
-                label { r#for: "interface-select", "Select Network Adapter" }
                 select {
                     id: "interface-select",
                     value: "{selected_index}",

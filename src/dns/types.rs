@@ -5,7 +5,6 @@ pub enum DnsMode {
     #[default]
     Automatic,
     Manual,
-    ManualDoH,
 }
 
 impl DnsMode {
@@ -14,7 +13,6 @@ impl DnsMode {
         match self {
             DnsMode::Automatic => "Automatic",
             DnsMode::Manual => "Manual",
-            DnsMode::ManualDoH => "Manual (DoH)",
         }
     }
 }
@@ -35,7 +33,40 @@ impl AddressFamily {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Debug)]
+pub enum DohMode {
+    #[default]
+    Off,
+    On,
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
+pub struct DnsServerEntry {
+    pub address: String,
+    pub doh_mode: DohMode,
+    pub doh_template: String,
+    pub allow_fallback: bool,
+}
+
+impl Default for DnsServerEntry {
+    fn default() -> Self {
+        Self {
+            address: String::new(),
+            doh_mode: DohMode::Off,
+            doh_template: String::new(),
+            allow_fallback: true,
+        }
+    }
+}
+
+impl DnsServerEntry {
+    #[allow(dead_code)]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub struct NetworkInterface {
     pub name: String,
     pub interface_index: u32,
@@ -50,12 +81,11 @@ impl NetworkInterface {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Default, Debug)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Default, Debug)]
 pub struct DnsEntry {
     pub enabled: bool,
-    pub primary: String,
-    pub secondary: String,
-    pub doh_template: String,
+    pub primary: DnsServerEntry,
+    pub secondary: DnsServerEntry,
 }
 
 impl DnsEntry {
@@ -69,22 +99,22 @@ impl DnsEntry {
         if !self.enabled {
             return true;
         }
-        !self.primary.is_empty()
+        !self.primary.address.is_empty()
     }
 
     pub fn get_addresses(&self) -> Vec<String> {
         let mut addresses = Vec::new();
-        if !self.primary.is_empty() {
-            addresses.push(self.primary.clone());
+        if !self.primary.address.is_empty() {
+            addresses.push(self.primary.address.clone());
         }
-        if !self.secondary.is_empty() {
-            addresses.push(self.secondary.clone());
+        if !self.secondary.address.is_empty() {
+            addresses.push(self.secondary.address.clone());
         }
         addresses
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Default, Debug)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Default, Debug)]
 pub struct DnsSettings {
     pub ipv4: DnsEntry,
     pub ipv6: DnsEntry,
@@ -96,12 +126,11 @@ impl DnsSettings {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub struct InterfaceConfig {
     pub interface_guid: String,
     pub interface_name: String,
     pub manual_settings: DnsSettings,
-    pub manual_doh_settings: DnsSettings,
 }
 
 impl InterfaceConfig {
@@ -110,12 +139,11 @@ impl InterfaceConfig {
             interface_guid,
             interface_name,
             manual_settings: DnsSettings::new(),
-            manual_doh_settings: DnsSettings::new(),
         }
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Default, Debug)]
+#[derive(Clone, PartialEq, Serialize, Deserialize, Default, Debug)]
 pub struct AppConfig {
     pub interfaces: Vec<InterfaceConfig>,
 }

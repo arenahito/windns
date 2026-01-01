@@ -11,7 +11,7 @@ fn main() {
             Config::new().with_menu(None).with_window(
                 WindowBuilder::new()
                     .with_title("Windows DNS Switcher")
-                    .with_inner_size(LogicalSize::new(600.0, 820.0)),
+                    .with_inner_size(LogicalSize::new(850.0, 820.0)),
             ),
         )
         .launch(app::App);

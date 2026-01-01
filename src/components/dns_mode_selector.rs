@@ -1,15 +1,11 @@
 use crate::dns::DnsMode;
-use crate::state::AppState;
 use dioxus::prelude::*;
 
 #[component]
-pub fn DnsModeSelector(state: Signal<AppState>, on_change: EventHandler<DnsMode>) -> Element {
-    let current_mode = state.read().dns_mode;
-
+pub fn DnsModeSelector(current_mode: DnsMode, on_change: EventHandler<DnsMode>) -> Element {
     rsx! {
-        div { class: "section",
-            div { class: "section-title", "DNS Mode" }
-            div { class: "radio-group",
+        div { class: "dns-mode-radio-group",
+            div { class: "radio-group horizontal",
                 div { class: "radio-option",
                     input {
                         r#type: "radio",
@@ -29,16 +25,6 @@ pub fn DnsModeSelector(state: Signal<AppState>, on_change: EventHandler<DnsMode>
                         onchange: move |_| on_change.call(DnsMode::Manual)
                     }
                     label { r#for: "mode-manual", "Manual" }
-                }
-                div { class: "radio-option",
-                    input {
-                        r#type: "radio",
-                        id: "mode-manual-doh",
-                        name: "dns-mode",
-                        checked: current_mode == DnsMode::ManualDoH,
-                        onchange: move |_| on_change.call(DnsMode::ManualDoH)
-                    }
-                    label { r#for: "mode-manual-doh", "Manual (DoH)" }
                 }
             }
         }

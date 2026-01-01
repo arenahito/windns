@@ -1,7 +1,7 @@
 use crate::components::*;
 use crate::dns::{
-    AddressFamily, DnsMode, get_current_dns, get_network_interfaces, load_config, save_config,
-    set_dns_automatic, set_dns_doh, set_dns_manual,
+    AddressFamily, DnsMode, DnsSettings, get_current_dns, get_network_interfaces, load_config,
+    save_config, set_dns_automatic, set_dns_with_doh,
 };
 use crate::state::{AppState, Message};
 use dioxus::prelude::*;
@@ -28,24 +28,8 @@ pub fn App() -> Element {
         });
     };
 
-    let on_tab_change = move |family: AddressFamily| {
-        state.write().active_tab = family;
-    };
-
-    let on_enabled_change = move |enabled: bool| {
-        state.write().get_current_entry_mut().enabled = enabled;
-    };
-
-    let on_primary_change = move |value: String| {
-        state.write().get_current_entry_mut().primary = value;
-    };
-
-    let on_secondary_change = move |value: String| {
-        state.write().get_current_entry_mut().secondary = value;
-    };
-
-    let on_doh_template_change = move |value: String| {
-        state.write().get_current_entry_mut().doh_template = value;
+    let on_settings_change = move |settings: DnsSettings| {
+        state.write().current_settings = settings;
     };
 
     let on_apply = move |_| {
@@ -68,20 +52,10 @@ pub fn App() -> Element {
                     state: state,
                     on_change: on_interface_change
                 }
-                DnsModeSelector {
-                    state: state,
-                    on_change: on_mode_change
-                }
-                DnsTabs {
-                    state: state,
-                    on_change: on_tab_change
-                }
                 DnsInput {
                     state: state,
-                    on_enabled_change: on_enabled_change,
-                    on_primary_change: on_primary_change,
-                    on_secondary_change: on_secondary_change,
-                    on_doh_template_change: on_doh_template_change
+                    on_settings_change: on_settings_change,
+                    on_mode_change: on_mode_change
                 }
                 ActionButtons {
                     state: state,
@@ -119,21 +93,6 @@ async fn initialize_app(mut state: Signal<AppState>) {
             state.write().interfaces = interfaces;
             state.write().selected_interface_index = 0;
 
-            let (has_ipv4, has_ipv6) = {
-                let read_state = state.read();
-                if let Some(interface) = read_state.selected_interface() {
-                    (interface.has_ipv4, interface.has_ipv6)
-                } else {
-                    (false, false)
-                }
-            };
-
-            if has_ipv4 {
-                state.write().active_tab = AddressFamily::IPv4;
-            } else if has_ipv6 {
-                state.write().active_tab = AddressFamily::IPv6;
-            }
-
             refresh_current_dns(state).await;
         }
         Err(e) => {
@@ -146,26 +105,10 @@ async fn initialize_app(mut state: Signal<AppState>) {
 }
 
 async fn change_interface(mut state: Signal<AppState>, index: usize) {
-    let (has_ipv4, has_ipv6) = {
+    {
         let mut write_state = state.write();
         write_state.selected_interface_index = index;
         write_state.clear_message();
-
-        if let Some(interface) = write_state.selected_interface() {
-            (interface.has_ipv4, interface.has_ipv6)
-        } else {
-            (false, false)
-        }
-    };
-
-    {
-        let mut write_state = state.write();
-        if has_ipv4 {
-            write_state.active_tab = AddressFamily::IPv4;
-        } else if has_ipv6 {
-            write_state.active_tab = AddressFamily::IPv6;
-        }
-
         write_state.dns_mode = DnsMode::Automatic;
         write_state.load_settings_for_mode(DnsMode::Automatic);
     }
@@ -180,7 +123,7 @@ async fn change_dns_mode(mut state: Signal<AppState>, mode: DnsMode) {
         return;
     }
 
-    if old_mode == DnsMode::Manual || old_mode == DnsMode::ManualDoH {
+    if old_mode == DnsMode::Manual {
         let config = {
             let mut write_state = state.write();
             write_state.save_settings_for_mode(old_mode);
@@ -277,6 +220,7 @@ async fn apply_dns_settings_impl(state: &Signal<AppState>) -> Result<(), String>
         .clone();
 
     let interface_index = interface.interface_index;
+    let interface_guid = &interface.interface_guid;
     let dns_mode = state.read().dns_mode;
     let settings = state.read().current_settings.clone();
 
@@ -295,36 +239,11 @@ async fn apply_dns_settings_impl(state: &Signal<AppState>) -> Result<(), String>
         }
         DnsMode::Manual => {
             if interface.has_ipv4 && settings.ipv4.enabled {
-                let addresses = settings.ipv4.get_addresses();
-                set_dns_manual(interface_index, AddressFamily::IPv4, addresses)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            } else if interface.has_ipv4 {
-                set_dns_automatic(interface_index, AddressFamily::IPv4)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-
-            if interface.has_ipv6 && settings.ipv6.enabled {
-                let addresses = settings.ipv6.get_addresses();
-                set_dns_manual(interface_index, AddressFamily::IPv6, addresses)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            } else if interface.has_ipv6 {
-                set_dns_automatic(interface_index, AddressFamily::IPv6)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-        }
-        DnsMode::ManualDoH => {
-            if interface.has_ipv4 && settings.ipv4.enabled {
-                let addresses = settings.ipv4.get_addresses();
-                let doh_template = settings.ipv4.doh_template.clone();
-                set_dns_doh(
+                set_dns_with_doh(
                     interface_index,
+                    interface_guid,
                     AddressFamily::IPv4,
-                    addresses,
-                    doh_template,
+                    &settings.ipv4,
                 )
                 .await
                 .map_err(|e| e.to_string())?;
@@ -335,13 +254,11 @@ async fn apply_dns_settings_impl(state: &Signal<AppState>) -> Result<(), String>
             }
 
             if interface.has_ipv6 && settings.ipv6.enabled {
-                let addresses = settings.ipv6.get_addresses();
-                let doh_template = settings.ipv6.doh_template.clone();
-                set_dns_doh(
+                set_dns_with_doh(
                     interface_index,
+                    interface_guid,
                     AddressFamily::IPv6,
-                    addresses,
-                    doh_template,
+                    &settings.ipv6,
                 )
                 .await
                 .map_err(|e| e.to_string())?;

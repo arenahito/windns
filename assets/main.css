@@ -172,6 +172,7 @@ select:disabled, input[type="text"]:disabled {
 
 .button-group {
     display: flex;
+    justify-content: center;
     gap: 12px;
     margin-top: 16px;
 }
@@ -280,3 +281,142 @@ button.secondary:disabled {
     color: #999999;
     margin-top: 4px;
 }
+
+/* DNS Settings Grid - Side by side layout */
+.dns-settings-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+@media (max-width: 700px) {
+    .dns-settings-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.dns-family-panel {
+    background-color: #2d2d2d;
+    border-radius: 6px;
+    padding: 16px;
+    border: 1px solid #3e3e42;
+}
+
+.dns-family-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #3e3e42;
+}
+
+.dns-family-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e0e0e0;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    margin: 0;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #555555;
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: #e0e0e0;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: #4fc3f7;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+    background-color: #3e3e42;
+    cursor: not-allowed;
+}
+
+.toggle-switch input:disabled + .toggle-slider:before {
+    background-color: #666666;
+}
+
+/* DNS Server Section */
+.dns-server-section {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #3e3e42;
+}
+
+.dns-server-section:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+/* DoH Options */
+.doh-options {
+    margin-top: 12px;
+    padding: 12px;
+    background-color: #252526;
+    border-radius: 4px;
+    border-left: 3px solid #4fc3f7;
+}
+
+.doh-options .form-group {
+    margin-bottom: 12px;
+}
+
+.doh-options .form-group:last-child {
+    margin-bottom: 0;
+}
+
+.doh-options .checkbox-group {
+    margin-bottom: 0;
+}
+
+/* Horizontal radio group */
+.radio-group.horizontal {
+    flex-direction: row;
+    gap: 24px;
+}
+
+/* DNS Mode Radio Group - New Style */
+.dns-mode-radio-group {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #3e3e42;
+}
+

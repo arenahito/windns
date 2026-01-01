@@ -18,7 +18,11 @@ pub fn validate_doh_template(template: &str) -> bool {
     if template.trim().is_empty() {
         return true;
     }
-    template.starts_with("https://") && template.contains("{?dns}")
+    if !template.starts_with("https://") {
+        return false;
+    }
+    let after_scheme = &template["https://".len()..];
+    !after_scheme.is_empty() && after_scheme.contains('.')
 }
 
 #[cfg(test)]
@@ -49,12 +53,14 @@ mod tests {
     #[test]
     fn test_validate_doh_template() {
         assert!(validate_doh_template(""));
-        assert!(validate_doh_template("https://dns.google/dns-query{?dns}"));
+        assert!(validate_doh_template("https://dns.google/dns-query"));
         assert!(validate_doh_template(
-            "https://cloudflare-dns.com/dns-query{?dns}"
+            "https://cloudflare-dns.com/dns-query"
         ));
-        assert!(!validate_doh_template("http://dns.google/dns-query{?dns}"));
-        assert!(!validate_doh_template("https://dns.google/dns-query"));
+        assert!(validate_doh_template("https://dns.nextdns.io/abc123"));
+        assert!(!validate_doh_template("http://dns.google/dns-query"));
         assert!(!validate_doh_template("invalid"));
+        assert!(!validate_doh_template("https://"));
+        assert!(!validate_doh_template("https://nodot"));
     }
 }
