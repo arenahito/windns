@@ -47,7 +47,12 @@ jobs:
       - name: Build
         run: dx bundle --platform desktop --release
 
+      - name: Create ZIP archive
+        run: |
+          cd target/dx/windns/bundle/windows
+          Compress-Archive -Path *.exe, "$env:GITHUB_WORKSPACE/LICENSE", "$env:GITHUB_WORKSPACE/README.md" -DestinationPath windns-${{ needs.release_please.outputs.tag_name }}-windows-x64.zip
+
       - name: Upload Release Artifact
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ needs.release_please.outputs.tag_name }} target/dx/windns/bundle/windows/*.exe
+        run: gh release upload ${{ needs.release_please.outputs.tag_name }} target/dx/windns/bundle/windows/*.zip
