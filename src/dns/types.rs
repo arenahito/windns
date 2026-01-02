@@ -143,10 +143,45 @@ impl DnsProfile {
     }
 }
 
+/// Window state with position in physical pixels and size in logical pixels.
+/// Physical position ensures exact screen location restoration.
+/// Logical size ensures consistent visual appearance across DPI settings.
+#[derive(Clone, PartialEq, Serialize, Deserialize, Debug)]
+pub struct WindowState {
+    /// X position in physical pixels
+    pub x: i32,
+    /// Y position in physical pixels
+    pub y: i32,
+    /// Width in logical pixels
+    pub width: u32,
+    /// Height in logical pixels
+    pub height: u32,
+    pub maximized: bool,
+}
+
+impl Default for WindowState {
+    fn default() -> Self {
+        Self {
+            x: 100,
+            y: 100,
+            width: 850,
+            height: 700,
+            maximized: false,
+        }
+    }
+}
+
+impl WindowState {
+    pub const MIN_WIDTH: u32 = 400;
+    pub const MIN_HEIGHT: u32 = 300;
+}
+
 #[derive(Clone, PartialEq, Serialize, Deserialize, Default, Debug)]
 pub struct AppConfig {
     #[serde(default)]
     pub profiles: Vec<DnsProfile>,
+    #[serde(default)]
+    pub window: Option<WindowState>,
 }
 
 impl AppConfig {
@@ -474,5 +509,63 @@ mod tests {
             state.get_display(AddressFamily::IPv6),
             "2001:4860:4860::8888"
         );
+    }
+
+    #[test]
+    fn test_window_state_default() {
+        let state = WindowState::default();
+        assert_eq!(state.x, 100);
+        assert_eq!(state.y, 100);
+        assert_eq!(state.width, 850);
+        assert_eq!(state.height, 700);
+        assert!(!state.maximized);
+    }
+
+    #[test]
+    fn test_window_state_min_constants() {
+        assert_eq!(WindowState::MIN_WIDTH, 400);
+        assert_eq!(WindowState::MIN_HEIGHT, 300);
+    }
+
+    #[test]
+    fn test_window_state_serialization() {
+        let state = WindowState {
+            x: 200,
+            y: 150,
+            width: 1024,
+            height: 768,
+            maximized: true,
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let deserialized: WindowState = serde_json::from_str(&json).unwrap();
+        assert_eq!(state, deserialized);
+    }
+
+    #[test]
+    fn test_app_config_with_window_state() {
+        let mut config = AppConfig::new();
+        config.window = Some(WindowState {
+            x: 300,
+            y: 200,
+            width: 1280,
+            height: 720,
+            maximized: false,
+        });
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config, deserialized);
+        assert!(deserialized.window.is_some());
+        assert_eq!(deserialized.window.unwrap().width, 1280);
+    }
+
+    #[test]
+    fn test_app_config_without_window_state() {
+        let config = AppConfig::new();
+        assert!(config.window.is_none());
+
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: AppConfig = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.window.is_none());
     }
 }

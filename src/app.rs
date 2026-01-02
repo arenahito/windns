@@ -1,9 +1,10 @@
 use crate::components::*;
 use crate::dns::{
-    AddressFamily, DnsMode, DnsSettings, get_current_dns, get_network_interfaces, load_config,
-    save_config, set_dns_automatic, set_dns_with_doh,
+    AddressFamily, DnsMode, DnsSettings, capture_window_state, get_current_dns,
+    get_network_interfaces, load_config, save_config, set_dns_automatic, set_dns_with_doh,
 };
 use crate::state::{AppState, Message};
+use dioxus::desktop::window;
 use dioxus::prelude::*;
 
 #[allow(non_snake_case)]
@@ -14,6 +15,19 @@ pub fn App() -> Element {
         spawn(async move {
             initialize_app(state).await;
         });
+    });
+
+    use_drop(move || {
+        let win = window();
+
+        if let Some(window_state) = capture_window_state(&win.window) {
+            let mut config = load_config().unwrap_or_else(|_| state.peek().config.clone());
+            config.window = Some(window_state);
+
+            if let Err(e) = save_config(&config) {
+                eprintln!("Failed to save window state: {}", e);
+            }
+        }
     });
 
     let on_interface_change = move |index: usize| {
