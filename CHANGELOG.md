@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/arenahito/windns/compare/v0.2.0...v0.3.0) (2026-01-02)
+
+
+### Features
+
+* require admin permission on startup ([#5](https://github.com/arenahito/windns/issues/5)) ([5a2cdf3](https://github.com/arenahito/windns/commit/5a2cdf32a247cf3772d8fa5ce4c2aa12212e287d))
+
 ## [0.2.0](https://github.com/arenahito/windns/compare/v0.1.0...v0.2.0) (2026-01-02)
 
 
