@@ -24,7 +24,15 @@ pub fn StatusBar(state: Signal<AppState>) -> Element {
                     rsx! {
                         div {
                             class: "{class_name}",
-                            "{msg.text}"
+                            span { class: "message-text", "{msg.text}" }
+                            button {
+                                r#type: "button",
+                                class: "message-close-btn",
+                                aria_label: "Close message",
+                                title: "Close",
+                                onclick: move |_| state.write().clear_message(),
+                                "×"
+                            }
                         }
                     }
                 }
