@@ -62,3 +62,14 @@ dx bundle --platform desktop
 ```bash
 cargo test
 ```
+
+### Code Coverage
+
+```bash
+
+# Get coverage (console output)
+cargo llvm-cov
+
+# Show lines with insufficient coverage
+cargo llvm-cov --show-missing-lines
+```

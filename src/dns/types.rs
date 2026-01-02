@@ -206,3 +206,273 @@ impl CurrentDnsState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dns_mode_as_str_automatic() {
+        assert_eq!(DnsMode::Automatic.as_str(), "Automatic");
+    }
+
+    #[test]
+    fn test_dns_mode_as_str_manual() {
+        assert_eq!(DnsMode::Manual.as_str(), "Manual");
+    }
+
+    #[test]
+    fn test_address_family_as_str_ipv4() {
+        assert_eq!(AddressFamily::IPv4.as_str(), "IPv4");
+    }
+
+    #[test]
+    fn test_address_family_as_str_ipv6() {
+        assert_eq!(AddressFamily::IPv6.as_str(), "IPv6");
+    }
+
+    #[test]
+    fn test_dns_server_entry_new() {
+        let entry = DnsServerEntry::new();
+        assert_eq!(entry.address, "");
+        assert_eq!(entry.doh_mode, DohMode::Off);
+        assert_eq!(entry.doh_template, "");
+        assert!(entry.allow_fallback);
+    }
+
+    #[test]
+    fn test_network_interface_display_name() {
+        let interface = NetworkInterface {
+            name: "Ethernet".to_string(),
+            interface_index: 12,
+            interface_guid: "{GUID}".to_string(),
+            has_ipv4: true,
+            has_ipv6: false,
+        };
+        assert_eq!(interface.display_name(), "Ethernet (12)");
+    }
+
+    #[test]
+    fn test_dns_entry_new() {
+        let entry = DnsEntry::new();
+        assert!(!entry.enabled);
+        assert_eq!(entry.primary.address, "");
+        assert_eq!(entry.secondary.address, "");
+    }
+
+    #[test]
+    fn test_dns_entry_is_valid_when_disabled() {
+        let entry = DnsEntry {
+            enabled: false,
+            primary: DnsServerEntry::default(),
+            secondary: DnsServerEntry::default(),
+        };
+        assert!(entry.is_valid());
+    }
+
+    #[test]
+    fn test_dns_entry_is_valid_when_enabled_with_empty_primary() {
+        let entry = DnsEntry {
+            enabled: true,
+            primary: DnsServerEntry::default(),
+            secondary: DnsServerEntry::default(),
+        };
+        assert!(!entry.is_valid());
+    }
+
+    #[test]
+    fn test_dns_entry_is_valid_when_enabled_with_primary() {
+        let entry = DnsEntry {
+            enabled: true,
+            primary: DnsServerEntry {
+                address: "8.8.8.8".to_string(),
+                ..Default::default()
+            },
+            secondary: DnsServerEntry::default(),
+        };
+        assert!(entry.is_valid());
+    }
+
+    #[test]
+    fn test_dns_entry_get_addresses_when_both_empty() {
+        let entry = DnsEntry::new();
+        assert_eq!(entry.get_addresses(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_dns_entry_get_addresses_when_primary_only() {
+        let entry = DnsEntry {
+            enabled: true,
+            primary: DnsServerEntry {
+                address: "8.8.8.8".to_string(),
+                ..Default::default()
+            },
+            secondary: DnsServerEntry::default(),
+        };
+        assert_eq!(entry.get_addresses(), vec!["8.8.8.8"]);
+    }
+
+    #[test]
+    fn test_dns_entry_get_addresses_when_both_set() {
+        let entry = DnsEntry {
+            enabled: true,
+            primary: DnsServerEntry {
+                address: "8.8.8.8".to_string(),
+                ..Default::default()
+            },
+            secondary: DnsServerEntry {
+                address: "8.8.4.4".to_string(),
+                ..Default::default()
+            },
+        };
+        assert_eq!(entry.get_addresses(), vec!["8.8.8.8", "8.8.4.4"]);
+    }
+
+    #[test]
+    fn test_dns_settings_new() {
+        let settings = DnsSettings::new();
+        assert!(!settings.ipv4.enabled);
+        assert!(!settings.ipv6.enabled);
+    }
+
+    #[test]
+    fn test_dns_profile_new() {
+        let profile = DnsProfile::new("Test Profile".to_string());
+        assert_eq!(profile.name, "Test Profile");
+        assert!(!profile.id.is_empty());
+        assert!(!profile.settings.ipv4.enabled);
+        assert!(!profile.settings.ipv6.enabled);
+    }
+
+    #[test]
+    fn test_app_config_new() {
+        let config = AppConfig::new();
+        assert_eq!(config.profiles.len(), 0);
+    }
+
+    #[test]
+    fn test_app_config_find_profile_found() {
+        let mut config = AppConfig::new();
+        let profile = DnsProfile::new("Test".to_string());
+        let id = profile.id.clone();
+        config.add_profile(profile);
+
+        let found = config.find_profile(&id);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "Test");
+    }
+
+    #[test]
+    fn test_app_config_find_profile_not_found() {
+        let config = AppConfig::new();
+        let found = config.find_profile("non-existent-id");
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_app_config_find_profile_mut_found() {
+        let mut config = AppConfig::new();
+        let profile = DnsProfile::new("Test".to_string());
+        let id = profile.id.clone();
+        config.add_profile(profile);
+
+        let found = config.find_profile_mut(&id);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().name, "Test");
+    }
+
+    #[test]
+    fn test_app_config_find_profile_mut_not_found() {
+        let mut config = AppConfig::new();
+        let found = config.find_profile_mut("non-existent-id");
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn test_app_config_add_profile() {
+        let mut config = AppConfig::new();
+        let profile = DnsProfile::new("Test".to_string());
+        config.add_profile(profile);
+        assert_eq!(config.profiles.len(), 1);
+    }
+
+    #[test]
+    fn test_app_config_remove_profile_success() {
+        let mut config = AppConfig::new();
+        let profile = DnsProfile::new("Test".to_string());
+        let id = profile.id.clone();
+        config.add_profile(profile);
+
+        let result = config.remove_profile(&id);
+        assert!(result);
+        assert_eq!(config.profiles.len(), 0);
+    }
+
+    #[test]
+    fn test_app_config_remove_profile_not_found() {
+        let mut config = AppConfig::new();
+        let result = config.remove_profile("non-existent-id");
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_app_config_sorted_profiles_empty() {
+        let config = AppConfig::new();
+        let sorted = config.sorted_profiles();
+        assert_eq!(sorted.len(), 0);
+    }
+
+    #[test]
+    fn test_app_config_sorted_profiles_sorted_by_name() {
+        let mut config = AppConfig::new();
+        config.add_profile(DnsProfile::new("Zebra".to_string()));
+        config.add_profile(DnsProfile::new("apple".to_string()));
+        config.add_profile(DnsProfile::new("Banana".to_string()));
+
+        let sorted = config.sorted_profiles();
+        assert_eq!(sorted.len(), 3);
+        assert_eq!(sorted[0].name, "apple");
+        assert_eq!(sorted[1].name, "Banana");
+        assert_eq!(sorted[2].name, "Zebra");
+    }
+
+    #[test]
+    fn test_current_dns_state_new() {
+        let state = CurrentDnsState::new();
+        assert_eq!(state.ipv4.len(), 0);
+        assert_eq!(state.ipv6.len(), 0);
+    }
+
+    #[test]
+    fn test_current_dns_state_get_display_ipv4_empty() {
+        let state = CurrentDnsState::new();
+        assert_eq!(state.get_display(AddressFamily::IPv4), "Automatic");
+    }
+
+    #[test]
+    fn test_current_dns_state_get_display_ipv4_with_addresses() {
+        let state = CurrentDnsState {
+            ipv4: vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()],
+            ipv6: vec![],
+        };
+        assert_eq!(state.get_display(AddressFamily::IPv4), "8.8.8.8, 8.8.4.4");
+    }
+
+    #[test]
+    fn test_current_dns_state_get_display_ipv6_empty() {
+        let state = CurrentDnsState::new();
+        assert_eq!(state.get_display(AddressFamily::IPv6), "Automatic");
+    }
+
+    #[test]
+    fn test_current_dns_state_get_display_ipv6_with_addresses() {
+        let state = CurrentDnsState {
+            ipv4: vec![],
+            ipv6: vec!["2001:4860:4860::8888".to_string()],
+        };
+        assert_eq!(
+            state.get_display(AddressFamily::IPv6),
+            "2001:4860:4860::8888"
+        );
+    }
+}
