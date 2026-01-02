@@ -71,6 +71,6 @@ mod tests {
     #[test]
     fn test_load_nonexistent_config() {
         let config = AppConfig::new();
-        assert_eq!(config.interfaces.len(), 0);
+        assert_eq!(config.profiles.len(), 0);
     }
 }
