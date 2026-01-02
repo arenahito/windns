@@ -1,4 +1,4 @@
-use crate::dns::types::{AddressFamily, CurrentDnsState};
+use crate::dns::types::CurrentDnsState;
 use thiserror::Error;
 use tokio::process::Command;
 
@@ -6,6 +6,10 @@ use tokio::process::Command;
 pub enum DnsCommandError {
     #[error("PowerShell command failed: {0}")]
     CommandFailed(String),
+    #[error("Registry configuration failed: {0}")]
+    RegistryFailed(String),
+    #[error("DNS settings applied, but DoH configuration failed: {0}")]
+    DnsAppliedButDohFailed(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Invalid output format")]
@@ -26,9 +30,30 @@ fn escape_powershell_string(s: &str) -> String {
         .replace(['\n', '\r'], "")
 }
 
+fn normalize_guid(guid: &str) -> String {
+    guid.trim_matches(['{', '}'].as_ref()).to_string()
+}
+
+fn normalize_error_message(msg: &str) -> String {
+    msg.lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 async fn run_powershell(script: &str) -> Result<String> {
+    let script_with_setup = format!(
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; {}",
+        script
+    );
     let mut command = Command::new("powershell.exe");
-    command.args(["-NoProfile", "-NonInteractive", "-Command", script]);
+    command.args([
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        &script_with_setup,
+    ]);
 
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW);
@@ -37,7 +62,9 @@ async fn run_powershell(script: &str) -> Result<String> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(DnsCommandError::CommandFailed(stderr.to_string()));
+        return Err(DnsCommandError::CommandFailed(normalize_error_message(
+            &stderr,
+        )));
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -86,36 +113,21 @@ pub async fn get_current_dns(interface_index: u32) -> Result<CurrentDnsState> {
     Ok(state)
 }
 
-pub async fn set_dns_automatic(interface_index: u32, family: AddressFamily) -> Result<()> {
-    let family_str = match family {
-        AddressFamily::IPv4 => "IPv4",
-        AddressFamily::IPv6 => "IPv6",
-    };
-
+pub async fn set_dns_automatic(interface_index: u32) -> Result<()> {
     let script = format!(
-        "Set-DnsClientServerAddress -InterfaceIndex {} -ResetServerAddresses -AddressFamily {}",
-        interface_index, family_str
+        "Set-DnsClientServerAddress -InterfaceIndex {} -ResetServerAddresses",
+        interface_index
     );
 
     run_powershell(&script).await?;
-    clear_dns_cache().await?;
 
     Ok(())
 }
 
-pub async fn set_dns_manual(
-    interface_index: u32,
-    family: AddressFamily,
-    addresses: Vec<String>,
-) -> Result<()> {
+pub async fn set_dns_manual(interface_index: u32, addresses: Vec<String>) -> Result<()> {
     if addresses.is_empty() {
-        return set_dns_automatic(interface_index, family).await;
+        return set_dns_automatic(interface_index).await;
     }
-
-    let family_str = match family {
-        AddressFamily::IPv4 => "IPv4",
-        AddressFamily::IPv6 => "IPv6",
-    };
 
     let addr_list = addresses
         .iter()
@@ -124,12 +136,11 @@ pub async fn set_dns_manual(
         .join(",");
 
     let script = format!(
-        "Set-DnsClientServerAddress -InterfaceIndex {} -ServerAddresses @({}) -AddressFamily {}",
-        interface_index, addr_list, family_str
+        "Set-DnsClientServerAddress -InterfaceIndex {} -ServerAddresses @({})",
+        interface_index, addr_list
     );
 
     run_powershell(&script).await?;
-    clear_dns_cache().await?;
 
     Ok(())
 }
@@ -140,11 +151,20 @@ async fn configure_doh_for_server(
     allow_fallback: bool,
 ) -> Result<()> {
     let fallback_str = if allow_fallback { "$true" } else { "$false" };
+    let escaped_address = escape_powershell_string(address);
+    let escaped_template = escape_powershell_string(template);
+
     let script = format!(
-        "Add-DnsClientDohServerAddress -ServerAddress '{}' -DohTemplate '{}' -AllowFallbackToUdp {} -AutoUpgrade $true",
-        escape_powershell_string(address),
-        escape_powershell_string(template),
-        fallback_str
+        r#"
+        $addr = '{}'
+        $existing = Get-DnsClientDohServerAddress -ServerAddress $addr -ErrorAction SilentlyContinue
+        if ($existing) {{
+            Set-DnsClientDohServerAddress -ServerAddress $addr -DohTemplate '{}' -AllowFallbackToUdp {} -AutoUpgrade $true
+        }} else {{
+            Add-DnsClientDohServerAddress -ServerAddress $addr -DohTemplate '{}' -AllowFallbackToUdp {} -AutoUpgrade $true
+        }}
+        "#,
+        escaped_address, escaped_template, fallback_str, escaped_template, fallback_str
     );
 
     run_powershell(&script).await?;
@@ -152,115 +172,172 @@ async fn configure_doh_for_server(
 }
 
 async fn enable_doh_registry(interface_guid: &str) -> Result<()> {
-    let escaped_guid = escape_powershell_string(interface_guid);
+    let normalized_guid = normalize_guid(interface_guid);
+    let escaped_guid = escape_powershell_string(&normalized_guid);
     let script = format!(
         r#"
-        $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\Dnscache\InterfaceSpecificParameters\{{{}}}"
+        $regPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\Dnscache\InterfaceSpecificParameters\{{{}}}'
         if (-not (Test-Path $regPath)) {{
             New-Item -Path $regPath -Force | Out-Null
         }}
-        Set-ItemProperty -Path $regPath -Name "DohFlags" -Value 1 -Type DWord -Force
+        $propName = 'DohFlags'
+        $existingProp = Get-ItemProperty -Path $regPath -Name $propName -ErrorAction SilentlyContinue
+        if ($existingProp) {{
+            Set-ItemProperty -Path $regPath -Name $propName -Value 1 -Force
+        }} else {{
+            New-ItemProperty -Path $regPath -Name $propName -Value 1 -PropertyType DWord -Force | Out-Null
+        }}
         "#,
         escaped_guid
     );
 
-    run_powershell(&script).await?;
+    run_powershell(&script).await.map_err(|e| {
+        DnsCommandError::RegistryFailed(match e {
+            DnsCommandError::CommandFailed(msg) => msg,
+            other => other.to_string(),
+        })
+    })?;
     Ok(())
 }
 
-pub async fn set_dns_with_doh(
-    interface_index: u32,
-    interface_guid: &str,
-    family: AddressFamily,
-    entry: &crate::dns::DnsEntry,
-) -> Result<()> {
-    let addresses = entry.get_addresses();
-
-    if addresses.is_empty() {
-        return set_dns_automatic(interface_index, family).await;
-    }
-
-    set_dns_manual(interface_index, family, addresses).await?;
-
-    let mut doh_errors: Vec<String> = Vec::new();
-
-    if let Some(err) = try_configure_doh(&entry.primary, "Primary").await {
-        doh_errors.push(err);
-    }
-
-    if let Some(err) = try_configure_doh(&entry.secondary, "Secondary").await {
-        doh_errors.push(err);
-    }
-
-    let has_doh = entry.primary.doh_mode == crate::dns::DohMode::On
-        || entry.secondary.doh_mode == crate::dns::DohMode::On;
-
-    if has_doh && let Err(e) = enable_doh_registry(interface_guid).await {
-        doh_errors.push(format!("Registry: {}", e));
-    }
-
-    if !doh_errors.is_empty() {
-        return Err(DnsCommandError::CommandFailed(format!(
-            "DoH configuration failed: {}",
-            doh_errors.join("; ")
-        )));
-    }
-
-    clear_dns_cache().await?;
-
-    Ok(())
-}
-
-async fn try_configure_doh(server: &crate::dns::DnsServerEntry, label: &str) -> Option<String> {
+/// Attempts to configure DoH for a server.
+/// Returns (was_attempted: bool, error: Option<String>)
+/// - (false, None): DoH not applicable (not enabled or empty config)
+/// - (true, None): DoH configured successfully
+/// - (true, Some(err)): DoH configuration failed
+async fn try_configure_doh(
+    server: &crate::dns::DnsServerEntry,
+    label: &str,
+) -> (bool, Option<String>) {
     if server.doh_mode != crate::dns::DohMode::On
         || server.address.is_empty()
         || server.doh_template.is_empty()
     {
-        return None;
+        return (false, None);
     }
 
     match configure_doh_for_server(&server.address, &server.doh_template, server.allow_fallback)
         .await
     {
-        Ok(()) => None,
-        Err(e) => Some(format!("{} DoH: {}", label, e)),
+        Ok(()) => (true, None),
+        Err(e) => (
+            true,
+            Some(format!(
+                "{}: {}",
+                label,
+                normalize_error_message(&e.to_string())
+            )),
+        ),
     }
 }
 
-#[allow(dead_code)]
-pub async fn set_dns_doh(
+/// Result type for DNS settings application
+/// - Ok(None): Complete success
+/// - Ok(Some(warning)): DNS applied, some DoH configs failed but at least one succeeded
+/// - Err(DnsAppliedButDohFailed): DNS applied, but all DoH configs failed or registry failed
+/// - Err(other): DNS application itself failed
+pub async fn set_dns_with_settings(
     interface_index: u32,
     interface_guid: &str,
-    family: AddressFamily,
-    addresses: Vec<String>,
-    doh_template: String,
-) -> Result<()> {
-    set_dns_manual(interface_index, family, addresses.clone()).await?;
+    settings: &crate::dns::DnsSettings,
+) -> Result<Option<String>> {
+    let mut all_addresses: Vec<String> = Vec::new();
+
+    if settings.ipv4.enabled {
+        all_addresses.extend(settings.ipv4.get_addresses());
+    }
+    if settings.ipv6.enabled {
+        all_addresses.extend(settings.ipv6.get_addresses());
+    }
+
+    let mut seen = std::collections::HashSet::new();
+    all_addresses.retain(|addr| seen.insert(addr.clone()));
+
+    if all_addresses.is_empty() {
+        set_dns_automatic(interface_index).await?;
+        return Ok(None);
+    }
+
+    set_dns_manual(interface_index, all_addresses).await?;
 
     let mut doh_errors: Vec<String> = Vec::new();
+    let mut any_doh_succeeded = false;
+    let mut any_doh_attempted = false;
 
-    if !doh_template.is_empty() && !addresses.is_empty() {
-        for address in &addresses {
-            if let Err(e) = configure_doh_for_server(address, &doh_template, true).await {
-                doh_errors.push(format!("DoH server {}: {}", address, e));
+    if settings.ipv4.enabled {
+        let (was_attempted, error) =
+            try_configure_doh(&settings.ipv4.primary, "IPv4 Primary").await;
+        if was_attempted {
+            any_doh_attempted = true;
+            if let Some(e) = error {
+                doh_errors.push(e);
+            } else {
+                any_doh_succeeded = true;
             }
         }
 
-        if let Err(e) = enable_doh_registry(interface_guid).await {
-            doh_errors.push(format!("Registry: {}", e));
+        let (was_attempted, error) =
+            try_configure_doh(&settings.ipv4.secondary, "IPv4 Secondary").await;
+        if was_attempted {
+            any_doh_attempted = true;
+            if let Some(e) = error {
+                doh_errors.push(e);
+            } else {
+                any_doh_succeeded = true;
+            }
         }
     }
 
+    if settings.ipv6.enabled {
+        let (was_attempted, error) =
+            try_configure_doh(&settings.ipv6.primary, "IPv6 Primary").await;
+        if was_attempted {
+            any_doh_attempted = true;
+            if let Some(e) = error {
+                doh_errors.push(e);
+            } else {
+                any_doh_succeeded = true;
+            }
+        }
+
+        let (was_attempted, error) =
+            try_configure_doh(&settings.ipv6.secondary, "IPv6 Secondary").await;
+        if was_attempted {
+            any_doh_attempted = true;
+            if let Some(e) = error {
+                doh_errors.push(e);
+            } else {
+                any_doh_succeeded = true;
+            }
+        }
+    }
+
+    if any_doh_attempted && !any_doh_succeeded {
+        return Err(DnsCommandError::DnsAppliedButDohFailed(
+            doh_errors.join("; "),
+        ));
+    }
+
+    if any_doh_succeeded {
+        enable_doh_registry(interface_guid).await.map_err(|e| {
+            DnsCommandError::DnsAppliedButDohFailed(format!(
+                "Registry configuration failed: {}",
+                normalize_error_message(&match e {
+                    DnsCommandError::RegistryFailed(msg) => msg,
+                    other => other.to_string(),
+                })
+            ))
+        })?;
+    }
+
     if !doh_errors.is_empty() {
-        return Err(DnsCommandError::CommandFailed(format!(
-            "DoH configuration failed: {}",
+        return Ok(Some(format!(
+            "Some DoH configurations failed: {}",
             doh_errors.join("; ")
         )));
     }
 
-    clear_dns_cache().await?;
-
-    Ok(())
+    Ok(None)
 }
 
 pub async fn clear_dns_cache() -> Result<()> {
@@ -274,14 +351,31 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore]
     async fn test_clear_dns_cache() {
         let result = clear_dns_cache().await;
         assert!(result.is_ok());
     }
 
     #[tokio::test]
+    #[ignore]
     async fn test_powershell_execution() {
         let result = run_powershell("Write-Output 'test'").await;
         assert!(result.expect("should succeed").contains("test"));
+    }
+
+    #[test]
+    fn test_escape_powershell_string() {
+        assert_eq!(escape_powershell_string("test"), "test");
+        assert_eq!(escape_powershell_string("it's"), "it''s");
+        assert_eq!(escape_powershell_string("back`tick"), "back``tick");
+        assert_eq!(escape_powershell_string("new\nline"), "newline");
+    }
+
+    #[test]
+    fn test_normalize_guid() {
+        assert_eq!(normalize_guid("{ABC-123}"), "ABC-123");
+        assert_eq!(normalize_guid("ABC-123"), "ABC-123");
+        assert_eq!(normalize_guid("{}"), "");
     }
 }

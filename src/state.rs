@@ -17,24 +17,38 @@ pub struct AppState {
     pub show_delete_confirm: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MessageLevel {
+    Success,
+    Warning,
+    Error,
+}
+
 #[derive(Clone, Debug)]
 pub struct Message {
     pub text: String,
-    pub is_error: bool,
+    pub level: MessageLevel,
 }
 
 impl Message {
     pub fn success(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
-            is_error: false,
+            level: MessageLevel::Success,
         }
     }
 
     pub fn error(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
-            is_error: true,
+            level: MessageLevel::Error,
+        }
+    }
+
+    pub fn warning(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            level: MessageLevel::Warning,
         }
     }
 }
@@ -178,6 +192,11 @@ impl AppState {
                 }
             }
             if ipv4_entry.secondary.doh_mode == DohMode::On {
+                if ipv4_entry.secondary.address.is_empty() {
+                    return Err(
+                        "IPv4 secondary DNS address is required when DoH is enabled".to_string()
+                    );
+                }
                 if ipv4_entry.secondary.doh_template.is_empty() {
                     return Err(
                         "IPv4 secondary DoH template URL is required when DoH is enabled"
@@ -213,6 +232,11 @@ impl AppState {
                 }
             }
             if ipv6_entry.secondary.doh_mode == DohMode::On {
+                if ipv6_entry.secondary.address.is_empty() {
+                    return Err(
+                        "IPv6 secondary DNS address is required when DoH is enabled".to_string()
+                    );
+                }
                 if ipv6_entry.secondary.doh_template.is_empty() {
                     return Err(
                         "IPv6 secondary DoH template URL is required when DoH is enabled"
@@ -280,14 +304,21 @@ mod tests {
     fn test_message_success() {
         let msg = Message::success("Success message");
         assert_eq!(msg.text, "Success message");
-        assert!(!msg.is_error);
+        assert_eq!(msg.level, MessageLevel::Success);
     }
 
     #[test]
     fn test_message_error() {
         let msg = Message::error("Error message");
         assert_eq!(msg.text, "Error message");
-        assert!(msg.is_error);
+        assert_eq!(msg.level, MessageLevel::Error);
+    }
+
+    #[test]
+    fn test_message_warning() {
+        let msg = Message::warning("Warning message");
+        assert_eq!(msg.text, "Warning message");
+        assert_eq!(msg.level, MessageLevel::Warning);
     }
 
     #[test]
@@ -330,7 +361,7 @@ mod tests {
         state.set_message(Message::success("Test"));
         assert!(state.message.is_some());
         assert_eq!(state.message.as_ref().unwrap().text, "Test");
-        assert!(!state.message.as_ref().unwrap().is_error);
+        assert_eq!(state.message.as_ref().unwrap().level, MessageLevel::Success);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::components::*;
 use crate::dns::{
-    AddressFamily, DnsMode, DnsSettings, capture_window_state, get_current_dns,
-    get_network_interfaces, load_config, save_config, set_dns_automatic, set_dns_with_doh,
+    DnsCommandError, DnsMode, DnsSettings, capture_window_state, clear_dns_cache, get_current_dns,
+    get_network_interfaces, load_config, save_config, set_dns_automatic, set_dns_with_settings,
 };
 use crate::state::{AppState, Message};
 use dioxus::desktop::window;
@@ -206,9 +206,7 @@ async fn refresh_current_dns(mut state: Signal<AppState>) {
                 state.write().current_dns_state = dns_state;
             }
             Err(e) => {
-                state
-                    .write()
-                    .set_message(Message::error(format!("Failed to get current DNS: {}", e)));
+                eprintln!("Failed to refresh DNS state: {}", e);
             }
         }
     }
@@ -265,40 +263,49 @@ async fn apply_dns_settings(mut state: Signal<AppState>) {
     state.write().set_loading(false);
 
     match result {
-        Ok(()) => {
+        Ok(warning) => {
             if state.read().dns_mode == DnsMode::Manual {
                 state.write().update_current_profile();
             }
 
             let config = state.read().config.clone();
 
-            if let Err(e) = save_config(&config) {
-                state.write().set_message(Message::error(format!(
-                    "Settings applied but failed to save config: {}",
-                    e
-                )));
+            let final_message = if let Err(e) = save_config(&config) {
+                Message::error(format!("Settings applied but failed to save config: {}", e))
+            } else if let Some(warn_msg) = warning {
+                Message::warning(format!("DNS settings applied. {}", warn_msg))
             } else {
-                state
-                    .write()
-                    .set_message(Message::success("DNS settings applied successfully"));
-            }
+                Message::success("DNS settings applied successfully")
+            };
+
+            state.write().set_message(final_message);
 
             refresh_current_dns(state).await;
         }
         Err(e) => {
-            state.write().set_message(Message::error(format!(
-                "Failed to apply DNS settings: {}",
-                e
-            )));
+            let (message, should_refresh) = match &e {
+                DnsCommandError::DnsAppliedButDohFailed(_) => (Message::error(e.to_string()), true),
+                _ => (
+                    Message::error(format!("Failed to apply DNS settings: {}", e)),
+                    false,
+                ),
+            };
+            state.write().set_message(message);
+
+            if should_refresh {
+                refresh_current_dns(state).await;
+            }
         }
     }
 }
 
-async fn apply_dns_settings_impl(state: &Signal<AppState>) -> Result<(), String> {
+async fn apply_dns_settings_impl(
+    state: &Signal<AppState>,
+) -> Result<Option<String>, DnsCommandError> {
     let interface = state
         .read()
         .selected_interface()
-        .ok_or("No interface selected")?
+        .ok_or_else(|| DnsCommandError::CommandFailed("No interface selected".to_string()))?
         .clone();
 
     let interface_index = interface.interface_index;
@@ -306,51 +313,26 @@ async fn apply_dns_settings_impl(state: &Signal<AppState>) -> Result<(), String>
     let dns_mode = state.read().dns_mode;
     let settings = state.read().current_settings.clone();
 
-    match dns_mode {
+    let dns_warning = match dns_mode {
         DnsMode::Automatic => {
-            if interface.has_ipv4 {
-                set_dns_automatic(interface_index, AddressFamily::IPv4)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-            if interface.has_ipv6 {
-                set_dns_automatic(interface_index, AddressFamily::IPv6)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
+            set_dns_automatic(interface_index).await?;
+            None
         }
         DnsMode::Manual => {
-            if interface.has_ipv4 && settings.ipv4.enabled {
-                set_dns_with_doh(
-                    interface_index,
-                    interface_guid,
-                    AddressFamily::IPv4,
-                    &settings.ipv4,
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-            } else if interface.has_ipv4 {
-                set_dns_automatic(interface_index, AddressFamily::IPv4)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-
-            if interface.has_ipv6 && settings.ipv6.enabled {
-                set_dns_with_doh(
-                    interface_index,
-                    interface_guid,
-                    AddressFamily::IPv6,
-                    &settings.ipv6,
-                )
-                .await
-                .map_err(|e| e.to_string())?;
-            } else if interface.has_ipv6 {
-                set_dns_automatic(interface_index, AddressFamily::IPv6)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
+            set_dns_with_settings(interface_index, interface_guid, &settings).await?
         }
-    }
+    };
 
-    Ok(())
+    let cache_warning = match clear_dns_cache().await {
+        Ok(()) => None,
+        Err(e) => Some(format!("DNS cache clear failed: {}", e)),
+    };
+
+    let combined_warning = match (dns_warning, cache_warning) {
+        (None, None) => None,
+        (Some(w), None) | (None, Some(w)) => Some(w),
+        (Some(w1), Some(w2)) => Some(format!("{}; {}", w1, w2)),
+    };
+
+    Ok(combined_warning)
 }

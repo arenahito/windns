@@ -1,18 +1,32 @@
 use crate::dns::AddressFamily;
-use crate::state::AppState;
+use crate::state::{AppState, MessageLevel};
 use dioxus::prelude::*;
 
 #[component]
 pub fn StatusBar(state: Signal<AppState>) -> Element {
-    let current_state = state.read().current_dns_state.clone();
-    let message = state.read().message.clone();
+    let (current_state, message) = {
+        let read_state = state.read();
+        (
+            read_state.current_dns_state.clone(),
+            read_state.message.clone(),
+        )
+    };
 
     rsx! {
         div { class: "status-bar",
             if let Some(msg) = message {
-                div {
-                    class: if msg.is_error { "message error" } else { "message success" },
-                    "{msg.text}"
+                {
+                    let class_name = match msg.level {
+                        MessageLevel::Success => "message success",
+                        MessageLevel::Warning => "message warning",
+                        MessageLevel::Error => "message error",
+                    };
+                    rsx! {
+                        div {
+                            class: "{class_name}",
+                            "{msg.text}"
+                        }
+                    }
                 }
             }
 

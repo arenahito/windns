@@ -5,7 +5,9 @@ pub mod types;
 pub mod validation;
 pub mod window;
 
-pub use commands::{get_current_dns, set_dns_automatic, set_dns_with_doh};
+pub use commands::{
+    DnsCommandError, clear_dns_cache, get_current_dns, set_dns_automatic, set_dns_with_settings,
+};
 pub use config::{load_config, save_config};
 pub use network::get_network_interfaces;
 pub use types::{
