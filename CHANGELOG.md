@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/arenahito/windns/compare/v0.3.1...v0.3.2) (2026-01-02)
+
+
+### Bug Fixes
+
+* force install Dioxus CLI at release workflow ([#9](https://github.com/arenahito/windns/issues/9)) ([62c9fed](https://github.com/arenahito/windns/commit/62c9fede6d3e773afdaf6465759c7d4728353e2c))
+
 ## [0.3.1](https://github.com/arenahito/windns/compare/v0.3.0...v0.3.1) (2026-01-02)
 
 
