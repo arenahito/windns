@@ -44,6 +44,9 @@ jobs:
       - name: Install Dioxus CLI
         run: cargo binstall dioxus-cli@0.7.2 --no-confirm
 
+      - name: Add cargo bin to PATH
+        run: echo "$env:USERPROFILE\.cargo\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Build
         run: dx bundle --platform desktop --release
 
