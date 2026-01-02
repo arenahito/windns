@@ -38,8 +38,11 @@ jobs:
       - name: Cache
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 # v2.8.2
 
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
+
       - name: Install Dioxus CLI
-        run: cargo install dioxus-cli@0.7.2 --locked
+        run: cargo binstall dioxus-cli@0.7.2 --no-confirm
 
       - name: Build
         run: dx bundle --platform desktop --release
