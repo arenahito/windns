@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/arenahito/windns/compare/v0.1.0...v0.2.0) (2026-01-02)
+
+
+### Features
+
+* select 1st profile on startup ([#3](https://github.com/arenahito/windns/issues/3)) ([41e2a28](https://github.com/arenahito/windns/commit/41e2a28d36289f28de28c474059bb0f5c67c699f))
+
 ## 0.1.0 (2026-01-02)
 
 
