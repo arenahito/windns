@@ -127,7 +127,12 @@ async fn initialize_app(mut state: Signal<AppState>) {
 
     match load_config() {
         Ok(config) => {
-            state.write().config = config;
+            let first_id = config.sorted_profiles().first().map(|p| p.id.clone());
+            let mut st = state.write();
+            st.config = config;
+            if let Some(id) = first_id {
+                st.select_profile(&id);
+            }
         }
         Err(e) => {
             state
