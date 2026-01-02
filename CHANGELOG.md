@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/arenahito/windns/compare/v0.3.0...v0.3.1) (2026-01-02)
+
+
+### Bug Fixes
+
+* add cargo/bin path to release workflow ([#7](https://github.com/arenahito/windns/issues/7)) ([e902740](https://github.com/arenahito/windns/commit/e90274082a224b32cf637a4156f4514f5e1d4b73))
+
 ## [0.3.0](https://github.com/arenahito/windns/compare/v0.2.0...v0.3.0) (2026-01-02)
 
 
