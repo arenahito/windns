@@ -4,8 +4,16 @@ mod dns;
 mod state;
 
 use dioxus::desktop::tao::dpi::{LogicalSize, PhysicalPosition};
+use dioxus::desktop::tao::window::Icon;
 use dioxus::desktop::{Config, WindowBuilder};
 use dns::{WindowState, load_config, validate_window_state};
+
+fn load_icon() -> Option<Icon> {
+    let icon_bytes = include_bytes!("../icons/icon.png");
+    let image = image::load_from_memory(icon_bytes).ok()?.into_rgba8();
+    let (width, height) = image.dimensions();
+    Icon::from_rgba(image.into_raw(), width, height).ok()
+}
 
 fn main() {
     let config = match load_config() {
@@ -22,6 +30,7 @@ fn main() {
 
     let window_builder = WindowBuilder::new()
         .with_title("Windows DNS Switcher")
+        .with_window_icon(load_icon())
         .with_inner_size(LogicalSize::new(
             initial_width as f64,
             initial_height as f64,
