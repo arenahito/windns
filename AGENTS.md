@@ -25,6 +25,7 @@ After making code changes, run the following commands:
 
 1. **Format**: `cargo fmt`
 2. **Lint**: `cargo clippy`
+3. **Test**: `cargo test`
 
 Ensure both commands pass without errors before committing.
 
